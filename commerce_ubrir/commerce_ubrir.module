@@ -1,0 +1,655 @@
+<?php
+
+/**
+ * @file
+ * Implements the ubrir payment service for Drupal Commerce.
+ */
+
+// ubrir transaction modes.
+define('COMMERCE_ubrir_TXN_MODE_LIVE', 'live');
+define('COMMERCE_ubrir_TXN_MODE_SANDBOX', 'sandbox');
+
+// ubrir capture time limit delay in days.
+define('COMMERCE_ubrir_CAPTURE_MAX_DELAY_DAYS', 30);
+// ubrir maximum cancellation delay in days.
+define('COMMERCE_ubrir_REFUND_MAX_DELAY_DAYS', 120);
+// ubrir maximum authorization delay in days.
+define('COMMERCE_ubrir_AUTHORIZATION_MAX_DELAY_DAYS', 7);
+
+// ubrir specific error codes.
+define('COMMERCE_ubrir_ALIAS_NOT_FOUND', '2001');
+define('COMMERCE_ubrir_ENROLLED_CARD_ID_NEEDED', '0001');
+define('COMMERCE_ubrir_TRANSACTION_ACCEPTED', '0000');
+define('COMMERCE_ubrir_SUCCESS', 0);
+
+// Payment transaction status info constants.
+define('COMMERCE_ubrir_PAYMENT_STATUS_REFUND_OK', 'ubrir_refund');
+define('COMMERCE_ubrir_PAYMENT_STATUS_REFUND_FAILS', 'ubrir_refund_fails');
+
+// SSL peer (endpoint) validation.
+define('COMMERCE_ubrir_SSL_PEER_VALIDATE', TRUE);
+// The path to the Certificate Authority root certificate.
+// Debug mode. Since you do development in a local machine you need to define
+// an IP that is authorized on your ubrir account.
+define('COMMERCE_ubrir_DEBUG_ENABLED', variable_get('commerce_ubrir_debug_enabled', FALSE));
+// Set this to an IP that is authorized in your ubrir account.
+define('COMMERCE_ubrir_DEBUG_CLIENT_IP', variable_get('commerce_ubrir_debug_IP', '127.0.0.1'));
+// Set this to TRUE if your client IP is on a reserved IP address
+// http://en.wikipedia.org/wiki/Reserved_IP_addresses.
+define('COMMERCE_ubrir_USE_FIXED_CLIENT_IP', variable_get('commerce_ubrir_debug_reserved_IP', TRUE));
+
+
+/**
+ * Implements hook_commerce_payment_method_info().
+ */
+function commerce_ubrir_commerce_payment_method_info() {
+  $payment_methods = array();
+  $payment_methods['ubrir'] = array(
+    'base' => 'commerce_ubrir',
+    'title' => t('Платежный модуль УБРИР'),
+    'short_title' => t('Платежный модуль УБРИР'),
+    'display_title' => t('Платежный модуль УБРИР'),
+    'description' => t('Оплата Visa или MasterCard'),
+	'active' => TRUE,
+    'terminal' => TRUE,
+    'offsite' => TRUE,
+    'offsite_autoredirect' => TRUE,
+	'callbacks' => array(
+		'submit_form_validate' => 'commerce_ubrir_submit_form_validate',
+		)
+  );
+
+  return $payment_methods;
+}
+
+
+
+
+/**
+ * Define the default settings for the ubrir payment method.
+ */
+function commerce_ubrir_default_settings() {
+  return array(
+    'twpg_id' => '',
+    'sert' => '',
+    'uni_id' => '',
+    'uni_login' => '',
+    'uni_pass' => '',
+	'uni_emp' => '',
+    'two' => TRUE,
+  );
+}
+
+/**
+ * Payment method settings form callback.
+ */
+function commerce_ubrir_settings_form($settings = NULL) {
+  // Merge default settings into the stored settings array.
+  $settings += commerce_ubrir_default_settings();
+	
+  $out = '';
+  $order_id = '';
+  $myurl = strripos($_SERVER['REQUEST_URI'], '?') ? stristr('http://'.$_SERVER['HTTP_HOST'].$_SERVER['REQUEST_URI'], '?', TRUE) : 'http://'.$_SERVER['HTTP_HOST'].$_SERVER['REQUEST_URI'];  
+  $payment = commerce_payment_method_instance_load('ubrir|commerce_payment_ubrir');
+  $settingsyeah2 = $payment['settings'];
+  require(dirname(__FILE__)."/UbrirClass.php");
+  
+   if(!empty($_GET['task_ubrir']))
+			switch ($_GET['task_ubrir']) {
+				case '1':
+					if(!empty($_GET['shoporderidforstatus'])) {
+						$order_id = $_GET['shoporderidforstatus'];
+					
+					$answer = db_select('commerce_ubrir_ipn', 'n')
+					->fields('n')
+					->condition('order_id', $order_id, '=')
+					->orderBy('ipn_id', 'DESC')
+					->range(0,1)
+					->execute()
+					->fetchAssoc();	
+					
+						if(!empty($answer['twpg_session'])) {
+							$bankHandler = new Ubrir(array(																												 // для статуса
+								'shopId' => $settingsyeah2["twpg_id"],
+								'order_id' => $order_id, 
+								'sert' => $settingsyeah2["sert"],
+								'twpg_order_id' => $answer['twpg_id'], 
+								'twpg_session_id' =>$answer['twpg_session']
+								));
+							$out = '<div class="ubr_s">Статус заказа - '.$bankHandler->check_status().'</div>';	
+						}
+						else $out = '<div class="ubr_f">Получить статус данного заказа невозможно. Либо его не существует, либо он был оплачен через Uniteller</div>';	
+					}
+					else $out = "<div class='ubr_f'>Вы не ввели номер заказа</div>";
+					break;
+					
+				case '2':
+					if(!empty($_GET['shoporderidforstatus'])) {
+						$order_id = $_GET['shoporderidforstatus'];
+						
+					$answer = db_select('commerce_ubrir_ipn', 'n')
+					->fields('n')
+					->condition('order_id', $order_id, '=')
+					->orderBy('ipn_id', 'DESC')
+					->range(0,1)
+					->execute()
+					->fetchAssoc();	
+						
+						if(!empty($answer['twpg_session'])) {
+							$bankHandler = new Ubrir(array(																												 // для детализации
+								'shopId' => $settingsyeah2["twpg_id"],
+								'order_id' => $order_id, 
+								'sert' => $settingsyeah2["sert"],
+								'twpg_order_id' => $answer['twpg_id'], 
+								'twpg_session_id' =>$answer['twpg_session']
+								));
+							$out = $bankHandler->detailed_status();	
+						}
+						else $out = '<div class="ubr_f">Получить детализацию данного заказа невозможно. Либо его не существует, либо он был оплачен через Uniteller</div>';	
+					}
+					else $out = "<div class='ubr_f'>Вы не ввели номер заказа</div>";
+					break;
+					
+				case '3':
+					if(!empty($_GET['shoporderidforstatus'])) {
+						$order_id = $_GET['shoporderidforstatus'];
+						
+						$answer = db_select('commerce_ubrir_ipn', 'n')
+						->fields('n')
+						->condition('order_id', $order_id, '=')
+						->orderBy('ipn_id', 'DESC')
+						->range(0,1)
+						->execute()
+						->fetchAssoc();	
+
+							if(!empty($answer['twpg_session'])) {
+								$bankHandler = new Ubrir(array(																												 // для реверса
+									'shopId' => $settingsyeah2["twpg_id"],
+								'order_id' => $order_id, 
+								'sert' => $settingsyeah2["sert"],
+								'twpg_order_id' => $answer['twpg_id'], 
+								'twpg_session_id' =>$answer['twpg_session']
+								));
+								$res = $bankHandler->reverse_order();	
+								if($res == 'OK') {
+								  $order = commerce_order_load($order_id);
+								  $order_wrapper = entity_metadata_wrapper('commerce_order', $order_id);
+								  $transaction = commerce_payment_transaction_new('ubrir', $order_id);
+								  $transaction->instance_id = $order->data['payment_method'];
+								  $transaction->amount = $order_wrapper->commerce_order_total->amount->value();
+								  $transaction->currency_code = $order_wrapper->commerce_order_total->currency_code->value();
+								  $transaction->status = COMMERCE_PAYMENT_STATUS_FAILURE;
+								  $transaction->message = t('Реверс');	
+								  commerce_order_status_update($order, 'canceled');
+								  commerce_payment_transaction_save($transaction);
+								  $out = '<div class="ubr_s">Оплата успешно отменена</div>';
+									
+								}
+								else $out = $res;
+							}
+						else $out = '<div class="ubr_f">Получить реверс данного заказа невозможно. Он не был оплачен через Visa</div>';
+					}
+					else $out = "<div class='ubr_f'>Вы не ввели номер заказа</div>";
+					break;
+
+				case '4':
+					if(!empty($settingsyeah2["twpg_id"])  AND !empty($settingsyeah2["sert"])) {					
+							$bankHandler = new Ubrir(array(																												 // для сверки итогов
+								'shopId' => $settingsyeah2["twpg_id"],
+								'sert' => $settingsyeah2["sert"],
+								));
+							$out = $bankHandler->reconcile();
+					}                                                                                          
+					break;		
+					
+				case '5':
+					if(!empty($settingsyeah2["twpg_id"])  AND !empty($settingsyeah2["sert"])) {					
+							$bankHandler = new Ubrir(array(																												 // для журнала операции
+								'shopId' => $settingsyeah2["twpg_id"],
+								'sert' => $settingsyeah2["sert"],
+								));
+							$out = $bankHandler->extract_journal();
+					}      
+					break;	
+
+				case '6':
+					if(!empty($settingsyeah2["uni_login"])  AND !empty($settingsyeah2["uni_emp"])) {					
+							$bankHandler = new Ubrir(array(																												 // для журнала Uniteller
+								'uni_login' => $settingsyeah2["uni_login"],
+								'uni_pass' => $settingsyeah2["uni_emp"],
+								));
+							$out = $bankHandler->uni_journal();
+					} 
+					else $out = '<div class="ubr_f">Необходимо ввести логин и пароль ЛК для MasterCard</div>';   
+					break;	
+				case '7':
+					if(!empty($_GET['mailsubject'])  AND !empty($_GET['maildesc'])) {					
+							$to = 'ibank@ubrr.ru';
+							 $subject = htmlspecialchars($_GET['mailsubject'], ENT_QUOTES);
+							 $message = 'Отправитель: '.htmlspecialchars($_GET['mailem'], ENT_QUOTES).' | '.htmlspecialchars($_GET['maildesc'], ENT_QUOTES);
+							 $headers = 'From: '.$_SERVER["HTTP_HOST"];
+							 mail($to, $subject, $message, $headers);
+					}     
+					break;			
+					
+				default:
+					break;
+			}
+  
+  
+  $toprint = '
+			<style>
+			.ubr_s {
+			padding:10px;
+			color:#3c763d;
+			background-color:#dff0d8;
+			border-color:#d6e9c;
+			border:1px;
+			}
+			.ubr_f {
+			padding:10px;
+			color:#a94442;
+			background-color:#f2dede;
+			border-color:#ebccd1;
+			border:1px;
+			}
+			.twpgdt {
+				width: 100%;
+			}
+			.twpgbutton {
+				font-weight: 100 !important;
+				margin: 20px 5px 5px 5px; 
+				width: 100% !important;
+			}
+			.twpginput {
+				margin: 5px; 
+				width: 180px;
+				
+			}
+			.twpgdt td {
+				
+			}
+			#callback {
+			 padding: 20px;
+			 position: fixed;
+			 width:435px;
+			 bottom: 0;
+			 left: 0;
+			 height: 530px;
+			 z-index:999;
+			 background-color: white;
+			 box-shadow: 0 0 25px 3px;
+			 border-radius: 3px;
+			 margin: 20px;
+			 text-align: left;
+			 }
+			</style>
+			<div id="callback" style="display: none;">
+			 <table style="border:none;">
+			 <tr>
+			 <h2 onclick="show(this);" style="text-align: center; cursor:pointer;">Обратная связь<span style="margin-left: 20px; font-size: 80%; color: grey;" onclick="jQuery(\'#callback\').toggle();">[X]</span></h2>
+			 </tr>
+			 <tr>
+			<td>Тема</td>
+            <td>
+            <select name="subject" id="mailsubject" style="width:150px; border: 1px solid #e0e0e0;">
+              <option selected disabled>Выберите тему</option>
+              <option value="Подключение услуги">Подключение услуги</option>
+              <option value="Продление Сертификата">Продление Сертификата</option>
+              <option value="Технические вопросы">Технические вопросы</option>
+              <option value="Юридические вопросы">Юридические вопросы</option>
+			  <option value="Бухгалтерия">Бухгалтерия</option>
+              <option value="Другое">Другое</option>
+            </select>
+            </td>
+			</tr>
+			 <tr>
+			 <td>Телефон</td>
+			 <td>
+			 <input type="text" name="email" id="mailem" style="width:150px; border: 1px solid #e0e0e0;">
+			 </td>
+			 </tr>
+			 <tr>
+			 <td>Сообщение</td>
+			 <td>
+			 <textarea name="maildesc" id="maildesc" cols="30" rows="10" style="width:150px; border: 1px solid #e0e0e0; resize:none;"></textarea>
+			 </td>
+			 </tr>
+			 <tr><td></td>
+			 <td><input id="sendmail" onclick="
+			 var mailsubject = jQuery(\'#mailsubject\').val();
+			 var maildesc = jQuery(\'#maildesc\').val();
+			 var mailem = jQuery(\'#mailem\').val();
+			 console.log(mailsubject);
+			 console.log(maildesc);
+			 console.log(mailem);
+			 if(!mailem & !!maildesc) {
+			 jQuery(\'#mailresponse\').html(\'<br>Необходимо указать телефон\');
+			 return false;
+			 }
+			 if(!maildesc & !!mailem) {
+			 jQuery(\'#mailresponse\').html(\'<br>Сообщение не может быть пустым\');
+			 return false;
+			 }
+			 if(!!mailem & !!maildesc) 
+			 jQuery.ajax({
+			 type: \'POST\',
+			 url: location.href,
+			 data: {mailsubject:mailsubject, maildesc:maildesc, mailem:mailem, task_ubrir:7},
+			 success: function(response){
+			 jQuery(\'#mailresponse\').html(\'Письмо отправлено на почтовый сервер\');
+			 jQuery(\'#maildesc\').val(null);
+			 jQuery(\'#mailsubject\').val(null);
+			 jQuery(\'#mailem\').val(null);
+			 }
+			 });
+			 else jQuery(\'#mailresponse\').html(\'<br>Заполнены не все поля\');
+			 return false;
+			 " type="button" name="sendmail" value="Отправить">
+			 </tr>
+			 <tr>
+			 <td>
+			 </td>
+			 <td style="padding: 0" id="mailresponse">
+			 </td>
+			 </tr>
+			 <tr>
+			 <td></td>
+			<td>8 (800) 1000-200</td></tr>
+			 </table>
+			 </div>
+			 
+			<div style="width: 100%; margin-top: 10px;">'.$out.'</div>
+			<script>
+			var myurl = "'.$myurl.'";
+			</script>
+			<div style="margin: 20px 0 20px 0; text-align: center; padding: 20px; width: 415px; border: 1px dashed #999;"> 
+			<h3 style="text-align: center; padding: 0 0 20px 0; margin: 0;">Получить детальную информацию:</h3>
+			<div style="margin: 0 auto; text-align: center; padding: 5px; width: 200px; border: 1px dashed #999;">Номер заказа: <br>
+			<input style="border: 1px solid #e0e0e0; margin: 5px; max-width: 100%; padding: 5px;" type="text" name="shoporderidforstatus" id="shoporderidforstatus" value="'.$order_id.'" placeholder="№ заказа" size="8">
+			<input style="margin: 5px;" type="hidden" name="task_ubrir" id="task_ubrir" value="">
+			  <input class="twpginput" type="button" onclick="document.location = myurl+\'?task_ubrir=1&shoporderidforstatus=\'+jQuery(\'#shoporderidforstatus\').val()" id="statusbutton" value="Запросить статус заказа">
+			  <input class="twpginput" type="button" onclick="document.location = myurl+\'?task_ubrir=2&shoporderidforstatus=\'+jQuery(\'#shoporderidforstatus\').val()" id="detailstatusbutton" value="Информация о заказе">
+			  <input class="twpginput" type="button" onclick="document.location = myurl+\'?task_ubrir=3&shoporderidforstatus=\'+jQuery(\'#shoporderidforstatus\').val()" id="reversbutton" value="Отмена заказа"><br>
+			</div>  
+			  <input class="twpgbutton" type="button" onclick="document.location = myurl+\'?task_ubrir=4\'" id="recresultbutton" value="Сверка итогов">
+			  <input class="twpgbutton" type="button" onclick="document.location = myurl+\'?task_ubrir=5\'" id="journalbutton" value="Журнал операций Visa">
+			  <input class="twpgbutton" type="button" onclick="document.location = myurl+\'?task_ubrir=6\'" id="unijournalbutton" value="Журнал операций MasterCard">
+			  <input class="twpgbutton" type="button" onclick="jQuery(\'#callback\').toggle()" id="unijournalbutton" value="Написать в банк">
+			</div>
+			';			
+  
+  $form = array();
+  
+  $form['two'] = array(
+    '#type' => 'checkbox',
+    '#title' => t("Два процессинга"),
+    '#default_value' => $settings['two'],
+  );
+  $form['twpg_id'] = array(
+    '#type' => 'textfield',
+    '#title' => t('ID интернет-магазина для VISA'),
+    '#description' => t(''),
+    '#default_value' => $settings['twpg_id'],
+    '#required' => TRUE,
+  );
+  $form['sert'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Пароль к сертификату VISA'),
+    '#description' => t(''),
+    '#default_value' => $settings['sert'],
+    '#required' => TRUE,
+  );
+  $form['uni_id'] = array(
+    '#type' => 'textfield',
+    '#title' => t('ID интернет-магазина для MasterCard'),
+    '#description' => t(''),
+    '#default_value' => $settings['uni_id'],
+    '#required' => FALSE,
+  );
+  $form['uni_login'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Логин личного кабинета MasterCard'),
+    '#description' => t(''),
+    '#default_value' => $settings['uni_login'],
+    '#required' => FALSE,
+  );
+  $form['uni_pass'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Пароль интернет-магазина для MasterCard'),
+    '#description' => t(''),
+    '#default_value' => $settings['uni_pass'],
+    '#required' => FALSE,
+  );
+  $form['uni_emp'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Пароль личного кабинета MasterCard'),
+    '#description' => t($toprint),
+    '#default_value' => $settings['uni_emp'],
+    '#required' => FALSE,
+  );
+
+  return $form;
+}
+
+/**
+ * Payment method callback: adds a message and CSS to the submission form.
+ */
+function commerce_ubrir_submit_form($payment_method, $pane_values, $checkout_pane, $order) {
+  $form = array();
+  $pane_values += array('card_type' => '');
+  
+  $card_types = array(
+      'Visa' => t('Visa'),  
+    );
+	if($payment_method['settings']['two']) $card_types['MC'] = t('MasterCard');
+  	
+  $form['card_type'] = array(
+    '#type' => 'select',
+    '#title' => t('Выберите тип карты'),
+    '#options' => $card_types,
+    '#default_value' => 'Visa',
+  );
+
+  return $form;
+}
+
+
+function commerce_ubrir_submit_form_validate($form, &$form_state) {
+    return TRUE;
+}
+
+
+function commerce_ubrir_submit_form_submit($payment_method, $pane_form, $pane_values, $order, $charge) {
+  $order->data['card_type'] = $pane_values['card_type'];
+}
+
+
+/**
+ * Payment method callback: wraps the module's function for generating the form.
+ */
+function commerce_ubrir_redirect_form($form, &$form_state, $order, $payment_method) {
+  if ($order->data['card_type'] == 'MC') {
+    return commerce_ubrir_order_form_uni($form, $form_state, $order, $payment_method['settings']);
+  }
+  else {
+    return commerce_ubrir_order_form_twpg($form, $form_state, $order, $payment_method['settings']);
+  }	
+}
+
+/**
+ * Builds review form for ubrir aliases.
+ */
+function commerce_ubrir_order_form_uni($form, &$form_state, $order, $settings) {
+
+  $settings += commerce_ubrir_default_settings();
+  $user = user_load($order->uid);
+  $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
+   $amount = $order_wrapper->commerce_order_total->amount->value() / 100;
+  //var_dump(url('checkout/' . $order->order_id . '/payment/back/' . $order->data['payment_redirect_key'] . '?ubrir_status=1', array('absolute' => TRUE))); die;
+  $sign = strtoupper(md5(md5($settings['uni_id']).'&'.md5($settings['uni_login']).'&'.md5($settings['uni_pass']).'&'.md5($order->order_id).'&'.md5($amount)));
+  $parameters = array(
+  'SHOP_ID' => $settings['uni_id'],
+  'LOGIN' => $settings['uni_login'],
+  'ORDER_ID' => $order->order_id,
+  'PAY_SUM' => $amount,
+  'VALUE_1' => $order->order_id,
+  'URL_OK' => url('checkout/' . $order->order_id . '/payment/return/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
+  'URL_NO' => url('checkout/' . $order->order_id . '/payment/return/' . $order->data['payment_redirect_key'].'?cancel=1&', array('absolute' => TRUE)),
+  'SIGN' => $sign,
+  'LANG' => 'RU',
+  );
+
+  $form['#method'] = 'post';
+  $server_addresses = array();
+
+  $form['#action'] = 'https://91.208.121.201/estore_listener.php';
+		
+  // Build the data array that will be translated into hidden form values.
+  foreach ($parameters as $name => $value) {
+    $form[$name] = array(
+      '#type' => 'hidden',
+      '#value' => $value,
+    );
+  }
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Оплатить'),
+  );
+
+
+  return $form;
+}
+
+function commerce_ubrir_order_form_twpg($form, &$form_state, $order, $settings) {
+
+  $settings += commerce_ubrir_default_settings();
+  $user = user_load($order->uid);
+  $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
+  
+  require(dirname(__FILE__)."/UbrirClass.php");
+  $bankHandler = new Ubrir(array(																						// инициализируем объект операции в TWPG
+							'shopId' => $settings['twpg_id'], 
+							'order_id' => $order->order_id, 
+							'sert' => $settings['sert'],
+							'amount' => $order_wrapper->commerce_order_total->amount->value() / 100,
+							'approve_url' => url('checkout/' . $order->order_id . '/payment/return/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
+							'cancel_url' => url('checkout/' . $order->order_id . '/payment/return/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
+							'decline_url' => url('checkout/' . $order->order_id . '/payment/return/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
+							));                    
+  $response_order = $bankHandler->prepare_to_pay();
+  
+  if(empty($response_order->OrderID[0])) exit('We were unable to connect to TWPG');
+  
+  $ipn = array(
+    'twpg_id' => $response_order->OrderID[0],
+	'twpg_session'=> $response_order->SessionID[0],
+	'order_id' => $order->order_id
+  );
+  
+  $parameters = array(
+  'orderid' =>  (string) $response_order->OrderID,
+  'sessionid' => (string) $response_order->SessionID,
+  );
+  
+  drupal_write_record('commerce_ubrir_ipn', $ipn);
+  
+  $form['#method'] = 'get';
+  $server_addresses = array();
+
+  $form['#action'] = $response_order->URL;
+		
+  // Build the data array that will be translated into hidden form values.
+  foreach ($parameters as $name => $value) {
+    $form[$name] = array(
+      '#type' => 'hidden',
+      '#value' => $value,
+    );
+  }
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Оплатить'),
+  ); 
+
+
+  return $form;
+}
+
+
+
+/**
+ * Payment method callback: redirect form return validation.
+ */
+ 
+function commerce_ubrir_redirect_form_validate($order, $payment_method) {
+	
+	$out = FALSE;
+	if (isset($_POST["xmlmsg"])) {
+	   // если TWPG
+		if(stripos($_POST["xmlmsg"], "CANCELED") != false) $status = "CANCELED";
+		else {
+		  $xml_string = base64_decode($_POST["xmlmsg"]);
+		  $parse_it = simplexml_load_string($xml_string);
+		  if ($parse_it->OrderStatus[0]=="DECLINED") $status = "DECLINED";
+		  if ($parse_it->OrderStatus[0]=="APPROVED") $status = "APPROVED";
+		}
+		if($status == "APPROVED") {
+		require(dirname(__FILE__)."/UbrirClass.php");
+					$twpg_order = db_select('commerce_ubrir_ipn', 'n')
+					->fields('n')
+					->condition('order_id', $order->order_id, '=')
+					->orderBy('ipn_id', 'DESC')
+					->range(0,1)
+					->execute()
+					->fetchAssoc();
+					$bankHandler = new Ubrir(array(																			
+							'shopId' => $payment_method['settings']['twpg_id'], 
+							'order_id' => $order->order_id,
+							'sert' => $payment_method['settings']['sert'],
+						    'twpg_order_id' => $twpg_order['twpg_id'], 
+						    'twpg_session_id' => $twpg_order['twpg_session']
+							));		
+					if($bankHandler->check_status("APPROVED")) { $out = TRUE; }
+					else $out = FALSE;
+		}
+	}
+	if(isset($_GET["ORDER_IDP"])) {
+			$order->data['no_transact'] = 1;
+			$out = TRUE;
+		};
+		
+	if(isset($_GET["cancel"])) {
+			$order->data['no_transact'] = 1;
+			$out = FALSE;
+		};	
+	
+	return $out;
+} 
+ 
+/**
+ * Payment method callback: redirect form submission.
+ */
+function commerce_ubrir_redirect_form_submit($order, $payment_method) {
+
+  if(isset($order->data['no_transact']) AND $order->data['no_transact'] == 1) {
+  $order->data['no_transact'] = 0;
+  }
+  else {
+  $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
+ 
+  // Создаём транзакцию
+  $transaction = commerce_payment_transaction_new('ubrir', $order->order_id);
+  $transaction->instance_id = $order->data['payment_method'];
+  $transaction->amount = $order_wrapper->commerce_order_total->amount->value();
+  $transaction->currency_code = $order_wrapper->commerce_order_total->currency_code->value();
+  $transaction->status = COMMERCE_PAYMENT_STATUS_SUCCESS;
+  $transaction->message = t('Оплата успешно совершена.');
+					
+			
+  commerce_payment_transaction_save($transaction);
+  }
+		
+  }
+   

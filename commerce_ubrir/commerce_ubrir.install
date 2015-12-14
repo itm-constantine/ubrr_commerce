@@ -1,0 +1,101 @@
+<?php
+
+/**
+ * @file
+ * Installs the tables required by Commerce ubrir.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function commerce_ubrir_schema() {
+  $schema = array();
+
+  $schema['commerce_ubrir_ipn'] = array(
+    'description' => '',
+    'fields' => array(
+      'ipn_id' => array(
+        'description' => '',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'twpg_id' => array(
+        'description' => '',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+	  'twpg_session' => array(
+        'description' => '',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'order_id' => array(
+        'description' => '{commerce_order.order_id}',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('ipn_id'),
+  );
+
+  return $schema;
+}
+
+
+/**
+ * Create new database table to store ubrir ipn request.
+ */
+function commerce_ubrir_update_7000() {
+  $schema['commerce_ubrir_ipn'] = array(
+    'description' => '',
+    'fields' => array(
+      'ipn_id' => array(
+        'description' => '',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'twpg_id' => array(
+        'description' => '',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+	  'twpg_session' => array(
+        'description' => '',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'order_id' => array(
+        'description' => '{commerce_order.order_id}',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('ipn_id'),
+  );
+
+  db_create_table('commerce_ubrir_ipn', $schema['commerce_ubrir_ipn']);
+}
+
+/**
+ * Implements hook_install().
+ */
+function commerce_ubrir_uninstall() {
+  // Delete all variables.
+  variable_del('commerce_ubrir_debug_enabled');
+  variable_del('commerce_ubrir_debug_IP');
+  variable_del('commerce_ubrir_debug_reserved_IP');
+}
