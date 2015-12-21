@@ -78,7 +78,7 @@ class Ubrir
                   </Order>
                 </Request>
               </TKKPG>
-              ';	
+              ';
 			
 			return $this->xml_extract_result($this->send_xml($data));
 			
@@ -674,9 +674,9 @@ class Ubrir
 
 	 protected function send_xml($xml) 
 	   {
-		$ch = curl_init("https://91.208.121.201:7443/Exec");    // initialize curl handle
+		$ch = curl_init("https://twpg.ubrr.ru:8443/Exec");    // initialize curl handle
 		curl_setopt($ch, CURLOPT_POST, 1);
-		curl_setopt($ch, CURLOPT_CAINFO, dirname(__FILE__)."/certs/ubrir.crt");
+		curl_setopt($ch, CURLOPT_CAINFO, dirname(__FILE__)."/certs/bank.crt");
 		curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 1);
 		curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
 		curl_setopt($ch, CURLOPT_SSLCERT, dirname(__FILE__)."/certs/user.pem");

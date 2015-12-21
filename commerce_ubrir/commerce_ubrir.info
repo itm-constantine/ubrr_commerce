@@ -1,4 +1,4 @@
-name = ubrir
+name = Платежный модуль УБРиР
 description = Implements ubrir payment services for use with Drupal Commerce.
 package = Commerce (payment)
 dependencies[] = commerce

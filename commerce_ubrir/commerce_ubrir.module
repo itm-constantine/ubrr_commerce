@@ -361,20 +361,20 @@ function commerce_ubrir_settings_form($settings = NULL) {
 			 
 			<div style="width: 100%; margin-top: 10px;">'.$out.'</div>
 			<script>
-			var myurl = "'.$myurl.'";
+			var myurl = document.location;
 			</script>
 			<div style="margin: 20px 0 20px 0; text-align: center; padding: 20px; width: 415px; border: 1px dashed #999;"> 
 			<h3 style="text-align: center; padding: 0 0 20px 0; margin: 0;">Получить детальную информацию:</h3>
 			<div style="margin: 0 auto; text-align: center; padding: 5px; width: 200px; border: 1px dashed #999;">Номер заказа: <br>
 			<input style="border: 1px solid #e0e0e0; margin: 5px; max-width: 100%; padding: 5px;" type="text" name="shoporderidforstatus" id="shoporderidforstatus" value="'.$order_id.'" placeholder="№ заказа" size="8">
 			<input style="margin: 5px;" type="hidden" name="task_ubrir" id="task_ubrir" value="">
-			  <input class="twpginput" type="button" onclick="document.location = myurl+\'?task_ubrir=1&shoporderidforstatus=\'+jQuery(\'#shoporderidforstatus\').val()" id="statusbutton" value="Запросить статус заказа">
-			  <input class="twpginput" type="button" onclick="document.location = myurl+\'?task_ubrir=2&shoporderidforstatus=\'+jQuery(\'#shoporderidforstatus\').val()" id="detailstatusbutton" value="Информация о заказе">
-			  <input class="twpginput" type="button" onclick="document.location = myurl+\'?task_ubrir=3&shoporderidforstatus=\'+jQuery(\'#shoporderidforstatus\').val()" id="reversbutton" value="Отмена заказа"><br>
+			  <input class="twpginput" type="button" onclick="document.location = myurl+\'&task_ubrir=1&shoporderidforstatus=\'+jQuery(\'#shoporderidforstatus\').val()" id="statusbutton" value="Запросить статус заказа">
+			  <input class="twpginput" type="button" onclick="document.location = myurl+\'&task_ubrir=2&shoporderidforstatus=\'+jQuery(\'#shoporderidforstatus\').val()" id="detailstatusbutton" value="Информация о заказе">
+			  <input class="twpginput" type="button" onclick="document.location = myurl+\'&task_ubrir=3&shoporderidforstatus=\'+jQuery(\'#shoporderidforstatus\').val()" id="reversbutton" value="Отмена заказа"><br>
 			</div>  
-			  <input class="twpgbutton" type="button" onclick="document.location = myurl+\'?task_ubrir=4\'" id="recresultbutton" value="Сверка итогов">
-			  <input class="twpgbutton" type="button" onclick="document.location = myurl+\'?task_ubrir=5\'" id="journalbutton" value="Журнал операций Visa">
-			  <input class="twpgbutton" type="button" onclick="document.location = myurl+\'?task_ubrir=6\'" id="unijournalbutton" value="Журнал операций MasterCard">
+			  <input class="twpgbutton" type="button" onclick="document.location = myurl+\'&task_ubrir=4\'" id="recresultbutton" value="Сверка итогов">
+			  <input class="twpgbutton" type="button" onclick="document.location = myurl+\'&task_ubrir=5\'" id="journalbutton" value="Журнал операций Visa">
+			  <input class="twpgbutton" type="button" onclick="document.location = myurl+\'&task_ubrir=6\'" id="unijournalbutton" value="Журнал операций MasterCard">
 			  <input class="twpgbutton" type="button" onclick="jQuery(\'#callback\').toggle()" id="unijournalbutton" value="Написать в банк">
 			</div>
 			';			
@@ -494,8 +494,8 @@ function commerce_ubrir_order_form_uni($form, &$form_state, $order, $settings) {
   'ORDER_ID' => $order->order_id,
   'PAY_SUM' => $amount,
   'VALUE_1' => $order->order_id,
-  'URL_OK' => url('checkout/' . $order->order_id . '/payment/return/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
-  'URL_NO' => url('checkout/' . $order->order_id . '/payment/return/' . $order->data['payment_redirect_key'].'?cancel=1&', array('absolute' => TRUE)),
+  'URL_OK' => url('checkout/'.$order->order_id.'/payment/return/'.$order->data['payment_redirect_key'].'&', array('absolute' => TRUE)),
+  'URL_NO' => url('checkout/'.$order->order_id.'/payment/return/'.$order->data['payment_redirect_key'].'&cancel=1&', array('absolute' => TRUE)),
   'SIGN' => $sign,
   'LANG' => 'RU',
   );
